@@ -1,0 +1,8 @@
+ner-model/
+ner-model.zip
+.terraform/
+*.tfstate
+*.tfstate.*
+terraform/authorizer.zip
+__pycache__/
+.DS_Store

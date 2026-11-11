@@ -1,0 +1,63 @@
+name: build-and-deploy
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["terraform/**", "**.md"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: ap-southeast-2
+  ECR_REPO: serverless-ml-ner
+  FUNCTION_NAME: ner-tf-fn
+  MODEL_BUCKET: ${{ vars.MODEL_BUCKET }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Fetch model from S3
+        run: aws s3 cp "s3://${MODEL_BUCKET}/ner-model/" ner-model/ --recursive
+
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push (arm64)
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          TAG="${GITHUB_SHA::12}"
+          IMAGE="${REGISTRY}/${ECR_REPO}:${TAG}"
+          docker buildx build --platform linux/arm64 --provenance=false --push -t "$IMAGE" .
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Deploy to Lambda
+        run: |
+          aws lambda update-function-code --function-name "$FUNCTION_NAME" --image-uri "$IMAGE" > /dev/null
+          aws lambda wait function-updated --function-name "$FUNCTION_NAME"
+
+      - name: Warm up and smoke test
+        run: |
+          for i in 1 2 3 4 5; do
+            aws lambda invoke --function-name "$FUNCTION_NAME" \
+              --cli-binary-format raw-in-base64-out --cli-read-timeout 120 \
+              --payload '{"body": "{\"text\": \"Angela Merkel met Tony Blair in Berlin.\"}"}' \
+              out.json > meta.json
+            if grep -q '"statusCode": 200' out.json; then
+              echo "Smoke test passed on attempt $i"; cat out.json; exit 0
+            fi
+            echo "Attempt $i not ready:"; cat out.json; sleep 5
+          done
+          echo "Smoke test failed"; exit 1
