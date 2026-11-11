@@ -38,7 +38,7 @@ jobs:
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
-          TAG="${GITHUB_SHA::12}"
+          TAG="${GITHUB_SHA::12}-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
           IMAGE="${REGISTRY}/${ECR_REPO}:${TAG}"
           docker buildx build --platform linux/arm64 --provenance=false --push -t "$IMAGE" .
           echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
