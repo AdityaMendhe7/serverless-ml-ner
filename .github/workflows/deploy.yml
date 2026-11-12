@@ -3,7 +3,7 @@ name: build-and-deploy
 on:
   push:
     branches: [main]
-    paths-ignore: ["terraform/**", "**.md"]
+    paths-ignore: ["terraform/**", "**.md", "docs/**", "notebooks/**", "LICENSE"]
   workflow_dispatch:
 
 permissions:
